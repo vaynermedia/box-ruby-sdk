@@ -29,6 +29,6 @@ puts "Excellent choice, here are the contents of that folder"
 puts "FOLDER: #{ folder.name } (#{ folder.id })"
 
 # loop through and show each of the sub files and folders
-(folder.files + folder.folders).each do |item|
-  puts "\t#{ item.type.upcase }: #{ item.name } (#{ item.id })"
+folder.items.each do |item|
+  puts "\t#{ item.class.name }: #{ item.name } (#{ item.id })"
 end

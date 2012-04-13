@@ -14,6 +14,7 @@ Gem::Specification.new do |s|
   s.require_paths = [ "lib", "spec" ]
 
   s.add_dependency("httmultiparty", "~> 0.3.6")
+  s.add_dependency("multi_json")
 
   s.add_development_dependency("launchy") # only used in examples
   s.add_development_dependency("rake")

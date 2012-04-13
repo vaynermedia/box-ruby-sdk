@@ -179,7 +179,7 @@ module Box
     #       any info.
     #
     def folder(id)
-      Box::Folder.new(@api, nil, :id => id)
+      Box::Folder.new(@api, :id => id)
     end
 
     # Gets a file object by id.
@@ -195,7 +195,7 @@ module Box
     #       any info.
     #
     def file(id)
-      Box::File.new(@api, nil, :id => id)
+      Box::File.new(@api, :id => id)
     end
 
     # @return [Boolean] Is the account authorized?
@@ -243,7 +243,7 @@ module Box
     #
     def authorize_url(ticket = nil)
       ticket = self.ticket unless ticket
-      "#{ api.base_url }/auth/#{ ticket }"
+      "#{ api.old_url }/auth/#{ ticket }"
     end
 
     # Attempt to authorize this account using the given ticket. This will

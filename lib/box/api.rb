@@ -1,6 +1,7 @@
 require 'box/api/exceptions'
 
 require 'httmultiparty'
+require 'multi_json'
 
 module Box
   # A wrapper and interface to the Box api. Please visit the Box developers
@@ -15,8 +16,12 @@ module Box
     # @return [String] The base url of the box api.
     attr_accessor :base_url
 
-    # @return [String] The upload url of the box api.
+    # @return [String] The old url of the box api.
+    attr_accessor :old_url
+
     attr_accessor :upload_url
+
+    #debug_output
 
     # Create a new API object using the given parameters.
     #
@@ -33,11 +38,15 @@ module Box
     # @param [String] upload_url the url of the upload host for the Box api.
     # @param [String] version the version of the Box api in use.
     #
-    def initialize(key, url = 'https://box.net', upload_url = 'https://upload.box.net', version = '1.0')
-      @default_params = { :api_key => key } # add the api_key to every query
+    def initialize(key, url = 'https://www.box.com', upload_url = 'https://upload.box.com')
+      @api_key = key
 
-      @base_url = "#{ url }/api/#{ version }" # set the base of the request url
-      @upload_url = "#{ upload_url }/api/#{ version }" # uploads use a different url than everything else
+      @default_params = { :api_key => key } # add the api_key
+      @default_headers = { 'Authorization' => "BoxAuth api_key=#{ key }" }
+
+      @base_url = "#{ url }/api/2.0" # set the base of the request url
+      @old_url = "#{ url }/api/1.0" # logins still use v1
+      @upload_url = "#{ upload_url }/api/2.0"
     end
 
     # Make a normal REST request.
@@ -50,102 +59,51 @@ module Box
     #
     # @return [Hash] A parsed version of the XML response.
     #
-    def query_rest(expected, options = {})
-      query_raw('get', "#{ @base_url }/rest", expected, options)['response']
-    end
+    def query(method, *args)
+      params = Hash.new
+      params = params.merge(args.pop) if args.last.is_a?(Hash)
 
-    # Make a download request.
-    #
-    # @param [String] query the operation to be performed ("download").
-    # @param [Array] args an array of arguments to put in the url.
-    # @param [Hash] options (see #query_rest)
-    #
-    # @return The raw binary data of the file.
-    #
-    def query_download(args, options = {})
-      # produces: /download/<auth_token>/<arg1>/<arg2>/<etc>
-      url = [ "#{ @base_url }/download", @auth_token, args ].flatten.compact.join('/')
-      query_raw('get', url, nil, options)
-    end
+      url = [ @base_url, *args ].join("/")
+      params = MultiJson.encode(params)
 
-    # Make an upload request.
-    #
-    # @param [String] query The operation to be performed.
-    # @param [Array] args (see #query_download)
-    # @param [String] expected (see #query_rest)
-    # @param [Hash] options (see #query_rest)
-    #
-    # @return (see #query_rest)
-    #
-    def query_upload(query, args, expected, options = {})
-      # produces: /upload/<auth_token>/<arg1>/<arg2>/<etc>
-      url = [ "#{ @upload_url }/#{ query }", @auth_token, args ].flatten.compact.join('/')
-      query_raw('post', url, expected, options)['response']
-    end
+      response = self.class.send(method.to_sym, url, :body => params, :headers => @default_headers)
+      raise response.inspect unless response.success?
 
-    # Make a raw request.
-    #
-    # @note: HTTParty will automatically parse the response from its native
-    #        XML to a nested hash/array structure.
-    #
-    # @param ['get', 'post'] method The HTTP method to use.
-    # @param [String] url The url to make the request.
-    # @param [String] expected (see #query_rest)
-    # @param [Hash] options (see #query_rest)
-    #
-    # @return (see #query_rest)
-    #
-    def query_raw(method, url, expected, options = {})
-      response = case method
-      when 'get'
-        self.class.get(url, :query => @default_params.merge(options))
-      when 'post'
-        self.class.post(url, :query => @default_params.merge(options), :format => :xml) # known bug with api that only occurs with uploads, will be fixed soon
-      end
-
-      handle_response(response, expected)
-    end
-
-    # Handle the response of the request.
-    #
-    # @param [Hash] response The parsed representation of the XML response.
-    # @param expected (see #query_rest)
-    #
-    # @return [Hash] The response if no errors were found.
-    # @raise [Exception, UnknownResponse] Raises an exception if the
-    #        response status does not match the expected. This exception
-    #        is determined by {.get_exception}
-    def handle_response(response, expected = nil)
-      if expected
-        begin
-          status = response['response']['status']
-        rescue
-          raise UnknownResponse, "Unknown response: #{ response }"
-        end
-
-        unless status == expected # expected is the normal, successful status for this request
-          exception = self.class.get_exception(status)
-          raise exception, status
-        end
-      end
-
-      raise ErrorStatus, "HTTP code #{ response.code }" unless response.success? # when the http return code is not normal
       response
     end
 
-    # TODO: Add link to API documentation for all functions below.
-    # TODO: Document exceptions that could be thrown.
+    def query_old(*args)
+      params = @default_params
+      params = params.merge(args.pop) if args.last.is_a?(Hash)
+
+      url = [ @old_url, 'rest', *args ].join("/")
+
+      result = self.class.get(url, :query => params)
+      result['response']
+    end
+
+    def query_upload(*args)
+      params = Hash.new
+      params = params.merge(args.pop) if args.last.is_a?(Hash)
+
+      url = [ @upload_url, *args ].join("/")
+
+      response = self.class.post(url, :query => params, :headers => @default_headers)
+      raise response.inspect unless response.success?
+
+      response
+    end
 
     # Request a ticket for authorization
     def get_ticket
-      query_rest('get_ticket_ok', :action => :get_ticket)
+      query_old(:action => :get_ticket)
     end
 
     # Request an auth token given a ticket.
     #
     # @param [String] ticket the ticket to use.
     def get_auth_token(ticket)
-      query_rest('get_auth_token_ok', :action => :get_auth_token, :ticket => ticket)
+      query_old(:action => :get_auth_token, :ticket => ticket)
     end
 
     # Add the auth token to every request.
@@ -153,12 +111,19 @@ module Box
     # @param [String] auth_token The auth token to add to every request.
     def set_auth_token(auth_token)
       @auth_token = auth_token
-      @default_params[:auth_token] = auth_token
+
+      if auth_token
+        @default_params[:auth_token] = auth_token
+        @default_headers['Authorization'] = "BoxAuth api_key=#{ @api_key }&auth_token=#{ auth_token }"
+      else
+        @default_params.delete(:auth_token)
+        @default_headers['Authorization'] = "BoxAuth api_key=#{ @api_key }"
+      end
     end
 
     # Request the user be logged out.
     def logout
-      query_rest('logout_ok', :action => :logout)
+      query_old(:action => :logout)
     end
 
     # Register a new user.
@@ -166,21 +131,133 @@ module Box
     # @param [String] email The email address to use.
     # @param [String] password The password to use.
     def register_new_user(email, password)
-      query_rest('successful_register', :action => :register_new_user, :login => email, :password => password)
+      query_old(:action => :register_new_user, :login => email, :password => password)
     end
 
     # Verify a registration email.
     #
     # @param [String] email The email address to check.
     def verify_registration_email(email)
-      query_rest('email_ok', :action => :verify_registration_email, :login => email)
+      query_old(:action => :verify_registration_email, :login => email)
     end
 
     # Get the user's account info.
     def get_account_info
-      query_rest('get_account_info_ok', :action => :get_account_info)
+      query_old(:action => :get_account_info)
     end
 
+    def get_file_info(file_id)
+      query(:get, :files, file_id)
+    end
+
+    def update_file_info(file_id, params = Hash.new)
+      query(:put, :files, file_id, params)
+    end
+
+    def delete_file(file_id)
+      query(:delete, :files, file_id)
+    end
+
+    def upload_file(parent_id, file)
+      query_upload(:files, :data, :file => file, :folder_id => parent_id)
+    end
+
+    def download_file(file_id)
+      query(:get, :files, file_id, :data)
+    end
+
+    def upload_file_overwrite(file_id, file)
+      query_upload(:files, :file_id, :data, :file => file)
+    end
+
+    def upload_file_copy(file_id, file, destination_id)
+      query_upload(:post, :files, file_id, :copy, :file => file, :parent_folder => { :id => destination_id })
+    end
+
+    def get_file_versions(file_id)
+      query(:get, :files, file_id, :versions)
+    end
+
+    def get_file_version_info(file_id, file_version)
+      query(:get, :files, file_id, :version => file_version)
+    end
+
+    def download_file_version(file_id, file_version)
+      query(:get, :files, file_id, :versions, file_version)
+    end
+
+    def delete_file_version(file_id, file_version)
+      query(:delete, :files, file_id, :versions, file_version)
+    end
+
+    def add_file_comment(file_id, message)
+      query(:post, :files, file_id, :comments, :comment => message)
+    end
+
+    def get_file_comments(file_id)
+      query(:get, :files, file_id, :comments)
+    end
+
+    def create_folder(parent_id, name)
+      query(:post, :folders, parent_id, :name => name)
+    end
+
+    def get_folder_info(folder_id)
+      query(:get, :folders, folder_id)
+    end
+
+    def update_folder_info(folder_id, params = Hash.new)
+      query(:put, :folders, folder_id, params)
+    end
+
+    def delete_folder(folder_id)
+      query(:delete, :folders, folder_id)
+    end
+
+    def get_comment(comment_id)
+      query(:get, :comments, commend_id)
+    end
+
+    def update_comment(comment_id, params = Hash.new)
+      query(:put, :comments, comment_id, params)
+    end
+
+    def delete_comment(comment_id)
+      query(:delete, :comments, comment_id)
+    end
+
+    def create_discussion(params = Hash.new)
+      query(:post, :discusssions, params)
+    end
+
+    def get_discussion(discussion_id)
+      query(:get, :discussions, discussion_id)
+    end
+
+    def update_discussion(discussion_id, params)
+      query(:put, :discussions, discussion_id, params)
+    end
+
+    def delete_discussion(discussion_id)
+      query(:delete, :discussions, discussion_id)
+    end
+
+    def get_folder_discussions(folder_id)
+      query(:get, :folder, folder_id, :discussions)
+    end
+
+    def add_discussion_comment(discussion_id, params = Hash.new)
+      query(:post, :discussions, discussion_id, :comments, params)
+    end
+
+    def get_discussion_comments(discussion_id)
+      query(:get, :discussions, discussion_id, :comments)
+    end
+
+    def get_events
+      query(:get, :events)
+    end
+=begin
     # Get the entire tree of a given folder.
     #
     # @param [String] folder_id The id of the folder to use.
@@ -191,7 +268,7 @@ module Box
     #
     # TODO: document the possible arguments.
     def get_account_tree(folder_id, *args)
-      query_rest('listing_ok', :action => :get_account_tree, :folder_id => folder_id, :params => [ 'nozip' ] + args)
+      query(:get, [ :folders, folder_id ])
     end
 
     # Create a new folder.
@@ -200,7 +277,7 @@ module Box
     # @param [String] name The name of the newly created folder.
     # @param [Integer] shared The shared state of the new folder.
     def create_folder(parent_id, name, share = 0)
-      query_rest('create_ok', :action => :create_folder, :parent_id => parent_id, :name => name, :share => share)
+      query(:post, [ :folders, parent_id ], :name => name)
     end
 
     # Move the item to a new destination.
@@ -209,18 +286,16 @@ module Box
     # @param [String] target_id The id of the item to move.
     # @param [String] destination_id The id of the parent to move to.
     def move(target, target_id, destination_id)
-      query_rest('s_move_node', :action => :move, :target => target, :target_id => target_id, :destination_id => destination_id)
     end
 
     # Copy the the item to a new destination.
     #
     # @note The api currently only supports copying files.
     #
-    # @param ["file"] target The type of item.
     # @param [String] target_id The id of the item to copy.
     # @param [String] destination_id The id of the parent to copy to.
-    def copy(target, target_id, destination_id)
-      query_rest('s_copy_node', :action => :copy, :target => target, :target_id => target_id, :destination_id => destination_id)
+    def copy(file_id, destination_id)
+      query(:post, [ :files, file_id, :copy ], :destination_id => destination_id)
     end
 
     # Rename the item.
@@ -229,22 +304,20 @@ module Box
     # @param [String] target_id The id of the item to rename.
     # @param [String] new_name The new name to be used.
     def rename(target, target_id, new_name)
-      query_rest('s_rename_node', :action => :rename, :target => target, :target_id => target_id, :new_name => new_name)
     end
 
     # Delete the item.
     #
-    # @param ["file", "folder"] target The type of item.
-    # @param [String] target_id The id of the item to delete.
-    def delete(target, target_id)
-      query_rest('s_delete_node', :action => :delete, :target => target, :target_id => target_id)
+    # @param [String] file_id The id of the item to delete.
+    def file_delete(file_id)
+      query(:delete, [ :files, file_id ]
     end
 
     # Get the file info.
     #
     # @param [String] file_id The file id to get info for.
-    def get_file_info(file_id)
-      query_rest('s_get_file_info', :action => :get_file_info, :file_id => file_id)
+    def file_info(file_id)
+      query(:get, [ :files, file_id ])
     end
 
     # Set the item description.
@@ -253,14 +326,12 @@ module Box
     # @param [String] target_id The id of the item to describe.
     # @param [String] description The description to use.
     def set_description(target, target_id, description)
-      query_rest('s_set_description', :action => :set_description, :target => target, :target_id => target_id, :description => description)
     end
 
     # Download the file to the given path.
     #
     # @note You cannot download folders.
     #
-    # @param [String] path The path to write the file to.
     # @param [String] file_id The file id to download.
     # @param [Optional, String] version The version of the file to download.
     def download(file_id, version = nil)
@@ -365,5 +436,6 @@ module Box
     def unshare_public(target, target_id)
       query_rest('unshare_ok', :action => :public_unshare, :target => target, :target_id => target_id)
     end
+=end
   end
 end

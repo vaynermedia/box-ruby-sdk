@@ -1,5 +1,8 @@
 require 'yaml'
 
+require 'box/account'
+require 'box/api'
+
 ACCOUNT = YAML.load_file(File.dirname(__FILE__) + '/account.yml')
 
 def get_api

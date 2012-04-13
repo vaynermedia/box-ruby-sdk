@@ -1,60 +1,54 @@
 require 'helper/account'
-require 'helper/fake_tree'
-
-require 'box/api'
-require 'box/account'
 require 'box/folder'
 
 describe Box::Folder do
-  context "with api" do
-    before(:all) do
-      @root = get_root
-      spec = @root.find(:name => 'rspec folder', :type => 'folder').first
-      spec.delete if spec
-    end
-
-    before(:each) do
-      @test_root = @root.create('rspec folder')
-      @test_temp = @test_root.create('temp')
-
-      @dummy = @test_root.create('dummy')
-    end
-
-    after(:each) do
-      @test_root.delete
-    end
-
-    it "creates a new folder" do
-      @dummy.parent.should be @test_root
-      @dummy.name.should == 'dummy'
-    end
-
-    it "moves a folder" do
-      @dummy.move(@test_temp)
-      @dummy.parent.should be @test_temp
-    end
-
-    it "renames a folder" do
-      @dummy.rename('bandito')
-      @dummy.name.should == 'bandito'
-    end
-
-    it "deletes a folder" do
-      @dummy.create('todelete').delete
-      @dummy.folders.should have(0).items
-    end
-
-    it "gets/sets the folder description" do
-      @dummy.description.should == ""
-
-      @dummy.set_description("Hello World")
-      @dummy.description(true).should == "Hello World"
-
-      @dummy.set_description("Hello New World")
-      @dummy.description(true).should == "Hello New World"
-    end
+  before(:all) do
+    @root = get_root
+    spec = @root.find(:name => 'rspec', :type => 'folder').first
+    spec.delete if spec
   end
 
+  before(:each) do
+    @test_root = @root.create_folder('rspec')
+    @test_temp = @test_root.create_folder('temp')
+
+    @dummy = @test_root.create_folder('dummy')
+  end
+
+  after(:each) do
+    @test_root.delete
+  end
+
+  it "creates a new folder" do
+    @dummy.parent.should be @test_root
+    @dummy.name.should == 'dummy'
+  end
+
+  it "renames a folder" do
+    @dummy.name.should == 'dummy'
+    @dummy.name = 'bandito'
+    @dummy.save
+
+    @dummy.name.should == 'bandito'
+  end
+
+  it "moves a folder" do
+    @dummy.parent.should_not == @test_temp
+    @dummy.parent = @test_temp
+    @dummy.save
+
+    @dummy.parent.should == @test_temp
+  end
+
+  it "deletes a folder" do
+    to_delete = @dummy.create_folder('todelete')
+    @dummy.folders.should have(1).items
+
+    to_delete.delete
+    @dummy.folders.should have(0).items
+  end
+
+=begin
   context "using fake tree" do
     before(:each) do
       api = double("Api")
@@ -131,7 +125,6 @@ describe Box::Folder do
 
 # unfortunately, these tests are failing because of a limitation with our fake tree
 # the results seem correct, but often miss folder names, and needs to be fixed
-=begin
     describe "#at" do
       describe "from root" do
         it "gets the root folder" do
@@ -184,6 +177,6 @@ describe Box::Folder do
         end
       end
     end
-=end
   end
+=end
 end
