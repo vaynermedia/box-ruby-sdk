@@ -197,6 +197,12 @@ module Box
 
       true
     end
+    
+    def invite_collaborators(emails, options = Hash.new)
+      @api.invite_collaborators(id, emails, options)
+
+      true
+    end
 
     # Unshares this item.
     def unshare
