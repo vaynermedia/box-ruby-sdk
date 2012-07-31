@@ -358,6 +358,10 @@ module Box
       query_rest('private_share_ok', { :action => :private_share, :target => target, :target_id => target_id, :emails => emails, :message => "", :notify => "" }.merge(options))
     end
 
+    def invite_collaborators(target_id, emails, options = Hash.new)
+      query_rest('s_invite_collaborators', { :action => :invite_collaborators, :target => 'folder', :target_id => target_id, :emails => emails, :item_role_name => "" }.merge(options))
+    end
+
     # Stop sharing an item publically.
     #
     # @param [String] target The type of item.
