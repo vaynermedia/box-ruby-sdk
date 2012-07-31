@@ -98,7 +98,11 @@ module Box
     def query_raw(method, url, expected, options = {})
       response = case method
       when 'get'
-        self.class.get(url, :query => @default_params.merge(options))
+        if expected == 's_invite_collaborators'
+          self.class.get(url + '?' +@default_params.merge(options).to_url_params)
+        else
+          self.class.get(url, :query => @default_params.merge(options))
+        end
       when 'post'
         self.class.post(url, :query => @default_params.merge(options), :format => :xml) # known bug with api that only occurs with uploads, will be fixed soon
       end
@@ -359,7 +363,7 @@ module Box
     end
 
     def invite_collaborators(target_id, emails, options = Hash.new)
-      query_rest('s_invite_collaborators', { :action => :invite_collaborators, :target => 'folder', :target_id => target_id, :emails => emails, :item_role_name => "" }.merge(options))
+      query_rest('s_invite_collaborators', { :action => :invite_collaborators, :target => 'folder', :target_id => target_id, :emails => emails, :item_role_name => "editor", :resend_invite => 0, :no_email => 0, :params => [], :user_ids => [] }.merge(options))
     end
 
     # Stop sharing an item publically.
@@ -371,3 +375,13 @@ module Box
     end
   end
 end
+
+class Hash
+  def to_url_params
+    elements = []
+    keys.size.times do |i|
+      elements << "#{keys[i]}=#{values[i]}"
+    end
+    elements.join('&').gsub("@", "%40").gsub("emails", "emails[]")
+  end
+end  
